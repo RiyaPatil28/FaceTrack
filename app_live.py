@@ -136,7 +136,8 @@ class LiveDatabase:
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT a.id, a.employee_id, a.check_in_time, a.date, e.name, a.confidence
+                SELECT a.id, a.employee_id, a.check_in_time, a.date, e.name, 
+                       COALESCE(a.confidence, 0.0) as confidence
                 FROM attendance a
                 JOIN employees e ON a.employee_id = e.employee_id
                 WHERE a.date = ?
