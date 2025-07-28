@@ -258,9 +258,9 @@ def live_attendance_page(db, face_detector):
                 # Display results
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    st.image(image, caption="Original Image", use_column_width=True)
+                    st.image(image, caption="Original Image", use_container_width=True)
                 with col_b:
-                    st.image(image_rgb, caption=f"Face Detection Result ({len(faces)} faces detected)", use_column_width=True)
+                    st.image(image_rgb, caption=f"Face Detection Result ({len(faces)} faces detected)", use_container_width=True)
                 
                 if len(faces) > 0:
                     st.success(f"✅ Successfully detected {len(faces)} face(s) in the uploaded image!")
