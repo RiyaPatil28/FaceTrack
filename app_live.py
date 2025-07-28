@@ -1,0 +1,711 @@
+import streamlit as st
+import cv2
+import numpy as np
+import pandas as pd
+from datetime import datetime, date
+import time
+from PIL import Image
+import io
+import sqlite3
+import threading
+import queue
+
+# Enhanced database with face recognition capabilities
+class LiveDatabase:
+    def __init__(self, db_path='attendance_system.db'):
+        self.db_path = db_path
+        self.init_database()
+    
+    def init_database(self):
+        """Initialize the database with required tables"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Create employees table with face model
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS employees (
+                employee_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                department TEXT,
+                face_model BLOB,
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create attendance table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id TEXT NOT NULL,
+                check_in_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                date DATE DEFAULT (date('now')),
+                confidence REAL DEFAULT 0.0,
+                FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    def add_employee(self, employee_id, name, department, face_features=None):
+        """Add a new employee to the database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO employees (employee_id, name, department, face_model)
+                VALUES (?, ?, ?, ?)
+            ''', (employee_id, name, department, face_features))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except sqlite3.IntegrityError:
+            if 'conn' in locals():
+                conn.close()
+            return False
+        except Exception as e:
+            print(f"Error adding employee: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+    
+    def get_all_employees(self):
+        """Get all employees"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT employee_id, name, department, created_date
+                FROM employees 
+                ORDER BY name
+            ''')
+            
+            results = cursor.fetchall()
+            conn.close()
+            return results
+            
+        except Exception as e:
+            print(f"Error getting all employees: {e}")
+            return []
+    
+    def mark_attendance(self, employee_id, confidence=0.0):
+        """Mark attendance for an employee"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if employee exists
+            cursor.execute('SELECT employee_id FROM employees WHERE employee_id = ?', (employee_id,))
+            if not cursor.fetchone():
+                conn.close()
+                return False
+            
+            # Check if already marked today
+            today = date.today().strftime('%Y-%m-%d')
+            cursor.execute('''
+                SELECT id FROM attendance 
+                WHERE employee_id = ? AND date = ?
+            ''', (employee_id, today))
+            
+            if cursor.fetchone():
+                conn.close()
+                return False
+            
+            # Mark attendance
+            cursor.execute('''
+                INSERT INTO attendance (employee_id, check_in_time, date, confidence)
+                VALUES (?, ?, ?, ?)
+            ''', (employee_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), today, confidence))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Error marking attendance: {e}")
+            return False
+    
+    def get_attendance_by_date(self, date_str):
+        """Get attendance records for a specific date"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT a.id, a.employee_id, a.check_in_time, a.date, e.name, a.confidence
+                FROM attendance a
+                JOIN employees e ON a.employee_id = e.employee_id
+                WHERE a.date = ?
+                ORDER BY a.check_in_time
+            ''', (date_str,))
+            
+            results = cursor.fetchall()
+            conn.close()
+            return results
+            
+        except Exception as e:
+            print(f"Error getting attendance by date: {e}")
+            return []
+
+class LiveFaceRecognizer:
+    """Live face recognition system using OpenCV Haar Cascades and feature matching"""
+    
+    def __init__(self):
+        # Initialize face detector using Haar Cascade
+        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+        
+        # Face recognition parameters
+        self.known_faces = {}
+        self.recognition_threshold = 0.75
+        
+        # Initialize feature detector
+        self.sift = cv2.SIFT_create()
+        self.matcher = cv2.BFMatcher()
+    
+    def detect_faces(self, frame):
+        """Detect faces using Haar Cascade (fallback method)"""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = self.face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(30, 30))
+        return faces
+    
+    def draw_faces(self, frame, faces, labels=None):
+        """Draw rectangles around detected faces"""
+        for i, (x, y, w, h) in enumerate(faces):
+            color = (0, 255, 0) if labels and labels[i] else (255, 0, 0)
+            cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
+            
+            if labels and labels[i]:
+                label = f"{labels[i]['name']} ({labels[i]['confidence']:.1f}%)"
+                cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            else:
+                cv2.putText(frame, 'Face Detected', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        
+        return frame
+    
+    def extract_face_features(self, image):
+        """Extract face features for recognition using multiple methods"""
+        try:
+            faces = self.detect_faces(image)
+            if len(faces) == 0:
+                return None
+            
+            # Get the largest face
+            largest_face = max(faces, key=lambda x: x[2] * x[3])
+            x, y, w, h = largest_face
+            
+            # Extract face region
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            face_roi = gray[y:y+h, x:x+w]
+            
+            # Resize to standard size for consistent comparison
+            face_roi = cv2.resize(face_roi, (150, 150))
+            
+            # Method 1: Histogram features
+            hist = cv2.calcHist([face_roi], [0], None, [256], [0, 256])
+            
+            # Method 2: LBP (Local Binary Pattern) features
+            lbp_features = self._calculate_lbp_histogram(face_roi)
+            
+            # Method 3: Basic pixel intensity patterns
+            # Divide face into regions and calculate mean intensities
+            regions = []
+            h, w = face_roi.shape
+            region_h, region_w = h // 5, w // 5
+            
+            for i in range(5):
+                for j in range(5):
+                    region = face_roi[i*region_h:(i+1)*region_h, j*region_w:(j+1)*region_w]
+                    regions.append(np.mean(region))
+            
+            # Combine all features
+            combined_features = np.concatenate([
+                hist.flatten(),
+                lbp_features,
+                np.array(regions)
+            ])
+            
+            return combined_features
+            
+        except Exception as e:
+            print(f"Error extracting features: {e}")
+            return None
+    
+    def _calculate_lbp_histogram(self, image):
+        """Calculate Local Binary Pattern histogram"""
+        try:
+            lbp = np.zeros_like(image)
+            
+            # Simple LBP calculation
+            for i in range(1, image.shape[0] - 1):
+                for j in range(1, image.shape[1] - 1):
+                    center = image[i, j]
+                    
+                    # 8-neighbor LBP
+                    lbp_val = 0
+                    neighbors = [
+                        image[i-1, j-1], image[i-1, j], image[i-1, j+1],
+                        image[i, j+1], image[i+1, j+1], image[i+1, j],
+                        image[i+1, j-1], image[i, j-1]
+                    ]
+                    
+                    for k, neighbor in enumerate(neighbors):
+                        if neighbor >= center:
+                            lbp_val += (1 << (7-k))
+                    
+                    lbp[i, j] = lbp_val
+            
+            # Calculate histogram
+            hist = cv2.calcHist([lbp], [0], None, [256], [0, 256])
+            return hist.flatten()
+            
+        except Exception as e:
+            print(f"Error calculating LBP: {e}")
+            return np.zeros(256)
+    
+    def add_known_face(self, employee_id, name, image):
+        """Add a known face to the recognition system"""
+        features = self.extract_face_features(image)
+        if features is not None:
+            self.known_faces[employee_id] = {
+                'name': name,
+                'features': features
+            }
+            return True
+        return False
+    
+    def recognize_faces(self, frame):
+        """Recognize faces in the frame"""
+        faces = self.detect_faces(frame)
+        recognized = []
+        
+        for face in faces:
+            x, y, w, h = face
+            face_roi = frame[y:y+h, x:x+w]
+            
+            # Simple recognition based on stored features
+            features = self.extract_face_features(face_roi)
+            if features is not None and self.known_faces:
+                best_match = self._find_best_match(features)
+                if best_match:
+                    recognized.append(best_match)
+                else:
+                    recognized.append(None)
+            else:
+                recognized.append(None)
+        
+        return faces, recognized
+    
+    def _find_best_match(self, features, threshold=None):
+        """Find the best matching known face using multiple similarity metrics"""
+        if threshold is None:
+            threshold = self.recognition_threshold
+            
+        best_match = None
+        best_score = 0
+        
+        for emp_id, data in self.known_faces.items():
+            try:
+                known_features = data['features']
+                
+                # Method 1: Cosine similarity
+                cosine_sim = self._cosine_similarity(features, known_features)
+                
+                # Method 2: Correlation coefficient
+                corr_coeff = np.corrcoef(features, known_features)[0, 1]
+                if np.isnan(corr_coeff):
+                    corr_coeff = 0
+                
+                # Method 3: Euclidean distance (inverted and normalized)
+                euclidean_dist = np.linalg.norm(features - known_features)
+                max_dist = np.linalg.norm(features) + np.linalg.norm(known_features)
+                euclidean_sim = 1 - (euclidean_dist / (max_dist + 1e-7))
+                
+                # Combine scores with weights
+                combined_score = (0.4 * cosine_sim + 0.4 * abs(corr_coeff) + 0.2 * euclidean_sim)
+                
+                if combined_score > best_score and combined_score > threshold:
+                    best_score = combined_score
+                    best_match = {
+                        'employee_id': emp_id,
+                        'name': data['name'],
+                        'confidence': combined_score * 100
+                    }
+                    
+            except Exception as e:
+                print(f"Error comparing features for {emp_id}: {e}")
+                continue
+        
+        return best_match
+    
+    def _cosine_similarity(self, vec1, vec2):
+        """Calculate cosine similarity between two vectors"""
+        try:
+            dot_product = np.dot(vec1, vec2)
+            norm1 = np.linalg.norm(vec1)
+            norm2 = np.linalg.norm(vec2)
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0
+            
+            return dot_product / (norm1 * norm2)
+        except:
+            return 0
+
+def main():
+    st.set_page_config(
+        page_title="Smart Attendance System - Live",
+        page_icon="👥",
+        layout="wide"
+    )
+    
+    # Initialize system
+    db = LiveDatabase()
+    recognizer = LiveFaceRecognizer()
+    
+    # Initialize session state
+    if 'camera_active' not in st.session_state:
+        st.session_state.camera_active = False
+    if 'last_recognition' not in st.session_state:
+        st.session_state.last_recognition = {}
+    
+    st.title("🎯 Smart Attendance System - Live Recognition")
+    st.markdown("Real-time face detection and recognition for automated attendance")
+    
+    # Sidebar navigation
+    st.sidebar.title("Navigation")
+    page = st.sidebar.selectbox(
+        "Choose a section:",
+        ["📸 Live Detection", "👤 Employee Management", "📊 Reports", "⚙️ System Status"]
+    )
+    
+    if page == "📸 Live Detection":
+        live_detection_page(db, recognizer)
+    elif page == "👤 Employee Management":
+        employee_management_page(db, recognizer)
+    elif page == "📊 Reports":
+        reports_page(db)
+    elif page == "⚙️ System Status":
+        system_status_page(db)
+
+def live_detection_page(db, recognizer):
+    st.header("📸 Live Face Detection & Recognition")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Camera Feed")
+        
+        # Camera controls
+        camera_col1, camera_col2 = st.columns(2)
+        with camera_col1:
+            if st.button("🎥 Start Live Detection", type="primary"):
+                st.session_state.camera_active = True
+        with camera_col2:
+            if st.button("⏹️ Stop Detection"):
+                st.session_state.camera_active = False
+        
+        # Camera feed placeholder
+        camera_placeholder = st.empty()
+        status_placeholder = st.empty()
+        
+        # Live detection loop
+        if st.session_state.camera_active:
+            try:
+                cap = cv2.VideoCapture(0)
+                if not cap.isOpened():
+                    status_placeholder.error("❌ Cannot access camera. Using photo upload instead.")
+                    st.session_state.camera_active = False
+                else:
+                    status_placeholder.success("📹 Live detection active!")
+                    
+                    # Process frames
+                    frame_count = 0
+                    while st.session_state.camera_active and frame_count < 100:  # Limit for demo
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        # Process every 5th frame for performance
+                        if frame_count % 5 == 0:
+                            faces, recognized = recognizer.recognize_faces(frame)
+                            
+                            # Draw faces with recognition results
+                            frame_with_faces = recognizer.draw_faces(frame, faces, recognized)
+                            
+                            # Mark attendance for recognized faces
+                            for i, recognition in enumerate(recognized):
+                                if recognition:
+                                    emp_id = recognition['employee_id']
+                                    current_time = time.time()
+                                    last_time = st.session_state.last_recognition.get(emp_id, 0)
+                                    
+                                    # Prevent duplicate entries within 30 seconds
+                                    if current_time - last_time > 30:
+                                        success = db.mark_attendance(emp_id, recognition['confidence'])
+                                        if success:
+                                            st.session_state.last_recognition[emp_id] = current_time
+                                            with col2:
+                                                st.success(f"✅ {recognition['name']} - Attendance Marked!")
+                            
+                            # Display frame
+                            frame_rgb = cv2.cvtColor(frame_with_faces, cv2.COLOR_BGR2RGB)
+                            camera_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
+                        
+                        frame_count += 1
+                        time.sleep(0.1)
+                    
+                    cap.release()
+                    status_placeholder.info("📹 Live detection completed")
+                    st.session_state.camera_active = False
+                    
+            except Exception as e:
+                status_placeholder.error(f"❌ Error: {str(e)}")
+                st.session_state.camera_active = False
+        
+        # Photo upload for testing
+        st.subheader("📷 Upload Photo for Testing")
+        uploaded_file = st.file_uploader(
+            "Choose an image file", 
+            type=['jpg', 'jpeg', 'png'],
+            help="Upload a photo to test face detection and recognition"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                image = Image.open(uploaded_file)
+                image_array = np.array(image)
+                
+                # Convert to BGR for OpenCV
+                if len(image_array.shape) == 3:
+                    if image_array.shape[2] == 3:
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                    else:
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
+                else:
+                    image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                
+                # Detect and recognize faces
+                faces, recognized = recognizer.recognize_faces(image_bgr)
+                
+                # Draw results
+                image_with_faces = recognizer.draw_faces(image_bgr, faces, recognized)
+                image_rgb = cv2.cvtColor(image_with_faces, cv2.COLOR_BGR2RGB)
+                
+                # Display results
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.image(image, caption="Original Image", use_container_width=True)
+                with col_b:
+                    st.image(image_rgb, caption=f"Recognition Result ({len(faces)} faces)", use_container_width=True)
+                
+                # Show recognition results
+                for i, recognition in enumerate(recognized):
+                    if recognition:
+                        st.success(f"✅ Recognized: {recognition['name']} (Confidence: {recognition['confidence']:.1f}%)")
+                    else:
+                        st.info(f"👤 Face {i+1}: Unknown person")
+                        
+            except Exception as e:
+                st.error(f"❌ Error processing image: {str(e)}")
+    
+    with col2:
+        st.subheader("📋 Today's Attendance")
+        
+        # Get today's attendance
+        today = date.today().strftime('%Y-%m-%d')
+        today_attendance = db.get_attendance_by_date(today)
+        
+        if today_attendance:
+            for record in today_attendance:
+                confidence_text = f" ({record[5]:.1f}%)" if record[5] > 0 else ""
+                st.info(f"👤 {record[4]}{confidence_text}\n⏰ {record[2]}")
+        else:
+            st.info("No attendance records for today yet.")
+        
+        # Live statistics
+        st.subheader("📈 Live Stats")
+        total_employees = len(db.get_all_employees())
+        present_today = len(today_attendance)
+        
+        st.metric("Total Employees", total_employees)
+        st.metric("Present Today", present_today)
+        
+        if total_employees > 0:
+            attendance_rate = (present_today / total_employees) * 100
+            st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+
+def employee_management_page(db, recognizer):
+    st.header("👤 Employee Management")
+    
+    tab1, tab2 = st.tabs(["➕ Add Employee", "👥 View Employees"])
+    
+    with tab1:
+        st.subheader("Add New Employee with Face Training")
+        
+        with st.form("add_employee_form"):
+            employee_id = st.text_input("Employee ID")
+            employee_name = st.text_input("Employee Name")
+            department = st.text_input("Department")
+            
+            st.markdown("**Upload Employee Photo for Face Recognition**")
+            uploaded_file = st.file_uploader(
+                "Choose image file", 
+                type=['jpg', 'jpeg', 'png'],
+                help="Upload a clear front-facing photo for face recognition training"
+            )
+            
+            submit_button = st.form_submit_button("Add Employee & Train Face", type="primary")
+            
+            if submit_button:
+                if employee_id and employee_name and uploaded_file:
+                    try:
+                        # Process uploaded image
+                        image = Image.open(uploaded_file)
+                        image_array = np.array(image)
+                        
+                        if len(image_array.shape) == 3:
+                            if image_array.shape[2] == 3:
+                                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                            else:
+                                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
+                        else:
+                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                        
+                        # Train face recognition
+                        face_trained = recognizer.add_known_face(employee_id, employee_name, image_bgr)
+                        
+                        if face_trained:
+                            # Add to database
+                            success = db.add_employee(employee_id, employee_name, department, b'face_trained')
+                            
+                            if success:
+                                st.success(f"✅ Employee {employee_name} added and face trained successfully!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to add employee to database. ID might already exist.")
+                        else:
+                            st.error("❌ No face detected in the uploaded image. Please upload a clear photo.")
+                    
+                    except Exception as e:
+                        st.error(f"❌ Error processing: {str(e)}")
+                else:
+                    st.error("❌ Please fill in all fields and upload an image.")
+    
+    with tab2:
+        st.subheader("All Employees")
+        
+        employees = db.get_all_employees()
+        
+        if employees:
+            df_data = []
+            for emp in employees:
+                df_data.append({
+                    'ID': emp[0],
+                    'Name': emp[1], 
+                    'Department': emp[2],
+                    'Added Date': emp[3]
+                })
+            display_df = pd.DataFrame(df_data)
+            
+            st.dataframe(display_df, use_container_width=True)
+            
+            # Export functionality
+            csv = display_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Employees List",
+                data=csv,
+                file_name=f"employees_list_{date.today()}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("No employees registered yet.")
+
+def reports_page(db):
+    st.header("📊 Reports & Analytics")
+    
+    # Date selector
+    selected_date = st.date_input("Select Date", value=date.today())
+    
+    # Get attendance for selected date
+    attendance_records = db.get_attendance_by_date(selected_date.strftime('%Y-%m-%d'))
+    
+    if attendance_records:
+        df_records = []
+        for record in attendance_records:
+            df_records.append({
+                'Employee ID': record[1],
+                'Employee Name': record[4],
+                'Check-in Time': record[2],
+                'Confidence': f"{record[5]:.1f}%" if record[5] > 0 else "Manual",
+                'Date': record[3]
+            })
+        
+        if df_records:
+            df = pd.DataFrame(df_records)
+            st.dataframe(df, use_container_width=True)
+            
+            # Summary statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Present", len(df_records))
+            with col2:
+                total_employees = len(db.get_all_employees())
+                st.metric("Total Employees", total_employees)
+            with col3:
+                if total_employees > 0:
+                    attendance_rate = (len(df_records) / total_employees) * 100
+                    st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+    else:
+        st.info(f"No attendance records found for {selected_date}")
+
+def system_status_page(db):
+    st.header("⚙️ System Status")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📦 System Components")
+        
+        try:
+            import cv2
+            st.success(f"✅ OpenCV - OK (v{cv2.__version__})")
+        except:
+            st.error("❌ OpenCV - Not Available")
+        
+        try:
+            import numpy
+            st.success("✅ NumPy - OK")
+        except:
+            st.error("❌ NumPy - Not Available")
+        
+        try:
+            import pandas
+            st.success("✅ Pandas - OK")
+        except:
+            st.error("❌ Pandas - Not Available")
+    
+    with col2:
+        st.subheader("🗄️ Database & Recognition Status")
+        
+        try:
+            employees = db.get_all_employees()
+            st.success("✅ Database Connection - OK")
+            st.info(f"📊 Total Employees: {len(employees)}")
+            
+            today = date.today().strftime('%Y-%m-%d')
+            today_attendance = db.get_attendance_by_date(today)
+            st.info(f"📅 Today's Attendance: {len(today_attendance)}")
+            
+            known_faces = len(getattr(recognizer, 'known_faces', {}))
+            st.info(f"🧠 Trained Faces: {known_faces}")
+            
+        except Exception as e:
+            st.error(f"❌ System Error: {str(e)}")
+
+if __name__ == "__main__":
+    main()
