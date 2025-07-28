@@ -218,14 +218,66 @@ def live_attendance_page(db, face_detector):
         with camera_col2:
             stop_camera = st.button("⏹️ Stop Camera")
         
-        # Camera feed
+        # Camera feed and image upload
         camera_placeholder = st.empty()
+        
+        # Photo upload for face detection demo
+        st.subheader("📷 Upload Photo for Face Detection Demo")
+        uploaded_file = st.file_uploader(
+            "Choose an image file", 
+            type=['jpg', 'jpeg', 'png'],
+            help="Upload a photo to test face detection"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                # Read uploaded image
+                image = Image.open(uploaded_file)
+                image_array = np.array(image)
+                
+                # Convert to BGR for OpenCV
+                if len(image_array.shape) == 3:
+                    if image_array.shape[2] == 3:  # RGB
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                    elif image_array.shape[2] == 4:  # RGBA
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
+                    else:
+                        image_bgr = image_array
+                else:
+                    image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                
+                # Detect faces
+                faces = face_detector.detect_faces(image_bgr)
+                
+                # Draw faces
+                image_with_faces = face_detector.draw_faces(image_bgr, faces)
+                
+                # Convert back to RGB for display
+                image_rgb = cv2.cvtColor(image_with_faces, cv2.COLOR_BGR2RGB)
+                
+                # Display results
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.image(image, caption="Original Image", use_column_width=True)
+                with col_b:
+                    st.image(image_rgb, caption=f"Face Detection Result ({len(faces)} faces detected)", use_column_width=True)
+                
+                if len(faces) > 0:
+                    st.success(f"✅ Successfully detected {len(faces)} face(s) in the uploaded image!")
+                    for i, (x, y, w, h) in enumerate(faces):
+                        st.info(f"Face {i+1}: Position ({x}, {y}), Size {w}x{h}")
+                else:
+                    st.warning("⚠️ No faces detected in this image. Try uploading a clearer photo with visible faces.")
+                    
+            except Exception as e:
+                st.error(f"❌ Error processing image: {str(e)}")
         
         if start_camera:
             try:
                 cap = cv2.VideoCapture(0)
                 if not cap.isOpened():
-                    st.error("❌ Cannot access camera. Please check camera permissions.")
+                    st.error("❌ Cannot access camera. Camera functionality is limited in cloud environments.")
+                    st.info("💡 **Tip**: Use the photo upload feature above to test face detection!")
                 else:
                     st.success("📹 Camera started successfully!")
                     
@@ -256,6 +308,7 @@ def live_attendance_page(db, face_detector):
                     
             except Exception as e:
                 st.error(f"❌ Camera error: {str(e)}")
+                st.info("💡 **Alternative**: Use the photo upload feature to test face detection!")
         
         # Manual attendance section
         st.subheader("Manual Attendance")
@@ -473,9 +526,11 @@ def system_status_page(db):
                 st.success("✅ Camera - Available")
                 cap.release()
             else:
-                st.warning("⚠️ Camera - Not Accessible")
+                st.warning("⚠️ Camera - Not Accessible (Cloud Environment)")
+                st.info("💡 Photo upload available as alternative")
         except:
             st.error("❌ Camera - Error")
+            st.info("💡 Photo upload available as alternative")
 
 if __name__ == "__main__":
     main()
