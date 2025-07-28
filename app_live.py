@@ -546,7 +546,7 @@ def employee_management_page(db, recognizer):
     tab1, tab2 = st.tabs(["➕ Add Employee", "👥 View Employees"])
     
     with tab1:
-        st.subheader("Add New Employee with Face Training")
+        st.subheader("Add New Employee or Train Existing Employee Face")
         
         with st.form("add_employee_form"):
             employee_id = st.text_input("Employee ID")
@@ -581,14 +581,29 @@ def employee_management_page(db, recognizer):
                         face_trained = recognizer.add_known_face(employee_id, employee_name, image_bgr)
                         
                         if face_trained:
-                            # Add to database
+                            # Try to add new employee or update existing one
                             success = db.add_employee(employee_id, employee_name, department, b'face_trained')
                             
                             if success:
                                 st.success(f"✅ Employee {employee_name} added and face trained successfully!")
                                 st.rerun()
                             else:
-                                st.error("❌ Failed to add employee to database. ID might already exist.")
+                                # Employee exists, try to update face training
+                                try:
+                                    conn = sqlite3.connect(db.db_path)
+                                    cursor = conn.cursor()
+                                    cursor.execute('''
+                                        UPDATE employees 
+                                        SET name = ?, department = ?, face_model = ?
+                                        WHERE employee_id = ?
+                                    ''', (employee_name, department, b'face_trained', employee_id))
+                                    conn.commit()
+                                    conn.close()
+                                    
+                                    st.success(f"✅ Face training updated for existing employee {employee_name}!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Error updating employee: {str(e)}")
                         else:
                             st.error("❌ No face detected in the uploaded image. Please upload a clear photo.")
                     
