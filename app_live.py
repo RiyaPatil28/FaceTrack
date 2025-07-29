@@ -162,7 +162,7 @@ class LiveFaceRecognizer:
         
         # Face recognition parameters
         self.known_faces = {}
-        self.recognition_threshold = 0.75
+        self.recognition_threshold = 0.85  # Increased threshold for better accuracy
         
         # Initialize feature detector
         self.sift = cv2.SIFT_create()
@@ -269,14 +269,22 @@ class LiveFaceRecognizer:
             return np.zeros(256)
     
     def add_known_face(self, employee_id, name, image):
-        """Add a known face to the recognition system"""
+        """Add a known face to the recognition system with enhanced validation"""
         features = self.extract_face_features(image)
         if features is not None:
-            self.known_faces[employee_id] = {
-                'name': name,
-                'features': features
-            }
-            return True
+            # Validate face quality by checking feature vector properties
+            if len(features) > 0 and np.any(features):
+                self.known_faces[employee_id] = {
+                    'name': name,
+                    'features': features,
+                    'trained_date': time.time()
+                }
+                print(f"Successfully trained {name} ({employee_id}) - Feature vector size: {len(features)}")
+                return True
+            else:
+                print(f"Failed to train {name} - Invalid feature vector")
+        else:
+            print(f"Failed to train {name} - No face detected")
         return False
     
     def recognize_faces(self, frame):
@@ -326,8 +334,8 @@ class LiveFaceRecognizer:
                 max_dist = np.linalg.norm(features) + np.linalg.norm(known_features)
                 euclidean_sim = 1 - (euclidean_dist / (max_dist + 1e-7))
                 
-                # Combine scores with weights
-                combined_score = (0.4 * cosine_sim + 0.4 * abs(corr_coeff) + 0.2 * euclidean_sim)
+                # Combine scores with weights - emphasize cosine similarity for better accuracy
+                combined_score = (0.6 * cosine_sim + 0.3 * abs(corr_coeff) + 0.1 * euclidean_sim)
                 
                 if combined_score > best_score and combined_score > threshold:
                     best_score = combined_score
@@ -368,42 +376,53 @@ def main():
     db = LiveDatabase()
     recognizer = LiveFaceRecognizer()
     
-    # Auto-train celebrities if not already trained
-    if len(recognizer.known_faces) == 0:
-        try:
-            import os
-            from PIL import Image
-            
-            # Celebrity training data
-            celebrities = {
-                'CELEB001': ('Emma Watson', 'attached_assets/image_1753715616096.png'),
-                'CELEB002': ('Emma Stone', 'attached_assets/image_1753715656090.png'),
-                'CELEB003': ('Dua Lipa', 'attached_assets/image_1753715683140.png'),
-                'CELEB004': ('Harry Styles', 'attached_assets/image_1753715722850.png'),
-                'CELEB006': ('Selena Gomez', 'attached_assets/image_1753715817958.png'),
-            }
-            
-            for emp_id, (name, image_path) in celebrities.items():
-                if os.path.exists(image_path):
-                    try:
-                        image = Image.open(image_path)
-                        image_array = np.array(image)
-                        
-                        if len(image_array.shape) == 3:
-                            if image_array.shape[2] == 3:
-                                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-                            elif image_array.shape[2] == 4:
-                                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
-                            else:
-                                continue
+    # Force retrain celebrities for better accuracy
+    try:
+        import os
+        from PIL import Image
+        
+        # Celebrity training data - corrected mapping
+        celebrities = {
+            'CELEB001': ('Emma Watson', 'attached_assets/image_1753715616096.png'),
+            'CELEB002': ('Emma Stone', 'attached_assets/image_1753715656090.png'),
+            'CELEB003': ('Dua Lipa', 'attached_assets/image_1753715683140.png'),
+            'CELEB004': ('Harry Styles', 'attached_assets/image_1753715722850.png'),
+            'CELEB005': ('Taylor Swift', 'attached_assets/image_1753715780670.png'),
+            'CELEB006': ('Selena Gomez', 'attached_assets/image_1753715817958.png'),
+            'CELEB007': ('Zayn Malik', 'attached_assets/image_1753715838683.png'),
+        }
+        
+        for emp_id, (name, image_path) in celebrities.items():
+            if os.path.exists(image_path):
+                try:
+                    image = Image.open(image_path)
+                    image_array = np.array(image)
+                    
+                    if len(image_array.shape) == 3:
+                        if image_array.shape[2] == 3:
+                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                        elif image_array.shape[2] == 4:
+                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
                         else:
-                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
-                        
-                        recognizer.add_known_face(emp_id, name, image_bgr)
-                    except:
-                        continue
-        except:
-            pass
+                            continue
+                    else:
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                    
+                    success = recognizer.add_known_face(emp_id, name, image_bgr)
+                    if success:
+                        print(f"✓ Trained {name} successfully")
+                    else:
+                        print(f"✗ Failed to train {name}")
+                except Exception as e:
+                    print(f"Error training {name}: {e}")
+                    continue
+    except Exception as e:
+        print(f"Training error: {e}")
+        pass
+    
+    # Show training status
+    trained_count = len(recognizer.known_faces)
+    print(f"Face recognition system initialized with {trained_count} trained employees")
     
     # Initialize session state
     if 'camera_active' not in st.session_state:
