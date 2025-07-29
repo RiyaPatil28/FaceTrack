@@ -402,13 +402,15 @@ def live_detection_page(db, recognizer):
         st.subheader("Camera Feed")
         
         # Camera controls
-        camera_col1, camera_col2 = st.columns(2)
+        camera_col1, camera_col2, camera_col3 = st.columns(3)
         with camera_col1:
             if st.button("🎥 Start Live Detection", type="primary"):
                 st.session_state.camera_active = True
         with camera_col2:
             if st.button("⏹️ Stop Detection"):
                 st.session_state.camera_active = False
+        with camera_col3:
+            st.metric("Recognition Status", "Active" if st.session_state.camera_active else "Stopped")
         
         # Camera feed placeholder
         camera_placeholder = st.empty()
@@ -419,20 +421,31 @@ def live_detection_page(db, recognizer):
             try:
                 cap = cv2.VideoCapture(0)
                 if not cap.isOpened():
-                    status_placeholder.error("❌ Cannot access camera. Using photo upload instead.")
+                    status_placeholder.error("❌ Cannot access camera. Please ensure:")
+                    st.error("1. Camera permissions are granted")
+                    st.error("2. No other applications are using the camera") 
+                    st.error("3. Camera is properly connected")
+                    st.info("💡 You can still test face recognition by uploading photos below")
                     st.session_state.camera_active = False
                 else:
-                    status_placeholder.success("📹 Live detection active!")
+                    status_placeholder.success("📹 Live camera detection is active! Move in front of the camera.")
                     
-                    # Process frames
+                    # Create a container for real-time updates
+                    detection_container = st.container()
+                    
+                    # Process frames continuously
                     frame_count = 0
-                    while st.session_state.camera_active and frame_count < 100:  # Limit for demo
+                    max_frames = 300  # Run for about 30 seconds at 10fps
+                    
+                    while st.session_state.camera_active and frame_count < max_frames:
                         ret, frame = cap.read()
                         if not ret:
+                            status_placeholder.warning("⚠️ Failed to read from camera")
                             break
                         
-                        # Process every 5th frame for performance
-                        if frame_count % 5 == 0:
+                        # Process every 3rd frame for better performance
+                        if frame_count % 3 == 0:
+                            # Detect and recognize faces
                             faces, recognized = recognizer.recognize_faces(frame)
                             
                             # Draw faces with recognition results
@@ -450,18 +463,28 @@ def live_detection_page(db, recognizer):
                                         success = db.mark_attendance(emp_id, recognition['confidence'])
                                         if success:
                                             st.session_state.last_recognition[emp_id] = current_time
-                                            with col2:
-                                                st.success(f"✅ {recognition['name']} - Attendance Marked!")
+                                            # Show attendance notification
+                                            with detection_container:
+                                                st.success(f"✅ Attendance marked: {recognition['name']} (Confidence: {recognition['confidence']:.1f}%)")
                             
-                            # Display frame
+                            # Display current frame with detection results
                             frame_rgb = cv2.cvtColor(frame_with_faces, cv2.COLOR_BGR2RGB)
                             camera_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
+                            
+                            # Show live detection status
+                            if len(faces) > 0:
+                                if any(recognized):
+                                    status_placeholder.success(f"👤 {len(faces)} face(s) detected - Recognition active!")
+                                else:
+                                    status_placeholder.info(f"👤 {len(faces)} face(s) detected - No matches found")
+                            else:
+                                status_placeholder.info("🔍 Scanning for faces...")
                         
                         frame_count += 1
-                        time.sleep(0.1)
+                        time.sleep(0.05)  # ~20fps processing
                     
                     cap.release()
-                    status_placeholder.info("📹 Live detection completed")
+                    status_placeholder.info("📹 Live detection session completed")
                     st.session_state.camera_active = False
                     
             except Exception as e:
