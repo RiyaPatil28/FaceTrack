@@ -162,7 +162,7 @@ class LiveFaceRecognizer:
         
         # Face recognition parameters
         self.known_faces = {}
-        self.recognition_threshold = 0.85  # Increased threshold for better accuracy
+        self.recognition_threshold = 0.92  # Much higher threshold for precision
         
         # Initialize feature detector
         self.sift = cv2.SIFT_create()
@@ -203,8 +203,11 @@ class LiveFaceRecognizer:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             face_roi = gray[y:y+h, x:x+w]
             
-            # Resize to standard size for consistent comparison
-            face_roi = cv2.resize(face_roi, (150, 150))
+            # Resize to larger standard size for better feature extraction
+            face_roi = cv2.resize(face_roi, (200, 200))
+            
+            # Apply histogram equalization for better feature consistency
+            face_roi = cv2.equalizeHist(face_roi)
             
             # Method 1: Histogram features
             hist = cv2.calcHist([face_roi], [0], None, [256], [0, 256])
@@ -334,8 +337,8 @@ class LiveFaceRecognizer:
                 max_dist = np.linalg.norm(features) + np.linalg.norm(known_features)
                 euclidean_sim = 1 - (euclidean_dist / (max_dist + 1e-7))
                 
-                # Combine scores with weights - emphasize cosine similarity for better accuracy
-                combined_score = (0.6 * cosine_sim + 0.3 * abs(corr_coeff) + 0.1 * euclidean_sim)
+                # Combine scores with weights - focus heavily on cosine similarity for precision
+                combined_score = (0.8 * cosine_sim + 0.15 * abs(corr_coeff) + 0.05 * euclidean_sim)
                 
                 if combined_score > best_score and combined_score > threshold:
                     best_score = combined_score
@@ -381,11 +384,11 @@ def main():
         import os
         from PIL import Image
         
-        # Celebrity training data - corrected mapping
+        # Celebrity training data - use better Dua Lipa photo for accuracy
         celebrities = {
             'CELEB001': ('Emma Watson', 'attached_assets/image_1753715616096.png'),
             'CELEB002': ('Emma Stone', 'attached_assets/image_1753715656090.png'),
-            'CELEB003': ('Dua Lipa', 'attached_assets/image_1753715683140.png'),
+            'CELEB003': ('Dua Lipa', 'attached_assets/image_1753782269006.png'),  # Better photo
             'CELEB004': ('Harry Styles', 'attached_assets/image_1753715722850.png'),
             'CELEB005': ('Taylor Swift', 'attached_assets/image_1753715780670.png'),
             'CELEB006': ('Selena Gomez', 'attached_assets/image_1753715817958.png'),
@@ -437,7 +440,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
         "Choose a section:",
-        ["📸 Live Detection", "👤 Employee Management", "📊 Reports", "⚙️ System Status"]
+        ["📸 Live Detection", "👤 Employee Management", "📊 Reports", "📱 Mobile Integration", "⚙️ System Status"]
     )
     
     if page == "📸 Live Detection":
@@ -446,6 +449,9 @@ def main():
         employee_management_page(db, recognizer)
     elif page == "📊 Reports":
         reports_page(db)
+    elif page == "📱 Mobile Integration":
+        from mobile_integration import mobile_integration_page
+        mobile_integration_page(db)
     elif page == "⚙️ System Status":
         system_status_page(db)
 

@@ -20,6 +20,10 @@ author = "agent"
 task = "workflow.run"
 args = "Live Attendance System"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Mobile API Server"
+
 [[workflows.workflow]]
 name = "Live Attendance System"
 author = "agent"
@@ -28,6 +32,19 @@ author = "agent"
 task = "shell.exec"
 args = "streamlit run app_live.py --server.port 5000"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Mobile API Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python mobile_api.py"
+waitForPort = 3000
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
 
 [[ports]]
 localPort = 5000
