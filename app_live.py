@@ -171,7 +171,13 @@ class LiveFaceRecognizer:
     def detect_faces(self, frame):
         """Detect faces using Haar Cascade (fallback method)"""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(30, 30))
+        faces = self.face_cascade.detectMultiScale(
+            gray, 
+            scaleFactor=1.05,  # More sensitive detection
+            minNeighbors=3,    # Lower threshold for detection
+            minSize=(25, 25),  # Even smaller minimum face size
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
         return faces
     
     def draw_faces(self, frame, faces, labels=None):
@@ -384,11 +390,11 @@ def main():
         import os
         from PIL import Image
         
-        # Celebrity training data - use better Dua Lipa photo for accuracy
+        # Celebrity training data - back to original working Dua Lipa photo
         celebrities = {
             'CELEB001': ('Emma Watson', 'attached_assets/image_1753715616096.png'),
             'CELEB002': ('Emma Stone', 'attached_assets/image_1753715656090.png'),
-            'CELEB003': ('Dua Lipa', 'attached_assets/image_1753782269006.png'),  # Better photo
+            'CELEB003': ('Dua Lipa', 'attached_assets/image_1753715683140.png'),  # Original working photo
             'CELEB004': ('Harry Styles', 'attached_assets/image_1753715722850.png'),
             'CELEB005': ('Taylor Swift', 'attached_assets/image_1753715780670.png'),
             'CELEB006': ('Selena Gomez', 'attached_assets/image_1753715817958.png'),
