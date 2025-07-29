@@ -368,6 +368,43 @@ def main():
     db = LiveDatabase()
     recognizer = LiveFaceRecognizer()
     
+    # Auto-train celebrities if not already trained
+    if len(recognizer.known_faces) == 0:
+        try:
+            import os
+            from PIL import Image
+            
+            # Celebrity training data
+            celebrities = {
+                'CELEB001': ('Emma Watson', 'attached_assets/image_1753715616096.png'),
+                'CELEB002': ('Emma Stone', 'attached_assets/image_1753715656090.png'),
+                'CELEB003': ('Dua Lipa', 'attached_assets/image_1753715683140.png'),
+                'CELEB004': ('Harry Styles', 'attached_assets/image_1753715722850.png'),
+                'CELEB006': ('Selena Gomez', 'attached_assets/image_1753715817958.png'),
+            }
+            
+            for emp_id, (name, image_path) in celebrities.items():
+                if os.path.exists(image_path):
+                    try:
+                        image = Image.open(image_path)
+                        image_array = np.array(image)
+                        
+                        if len(image_array.shape) == 3:
+                            if image_array.shape[2] == 3:
+                                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                            elif image_array.shape[2] == 4:
+                                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
+                            else:
+                                continue
+                        else:
+                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                        
+                        recognizer.add_known_face(emp_id, name, image_bgr)
+                    except:
+                        continue
+        except:
+            pass
+    
     # Initialize session state
     if 'camera_active' not in st.session_state:
         st.session_state.camera_active = False
