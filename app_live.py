@@ -410,23 +410,46 @@ def live_detection_page(db, recognizer):
             if st.button("⏹️ Stop Detection"):
                 st.session_state.camera_active = False
         with camera_col3:
-            st.metric("Recognition Status", "Active" if st.session_state.camera_active else "Stopped")
+            # Show number of trained faces
+            trained_count = len(recognizer.known_faces) if hasattr(recognizer, 'known_faces') else 0
+            st.metric("Trained Faces", trained_count)
         
         # Camera feed placeholder
         camera_placeholder = st.empty()
         status_placeholder = st.empty()
         
-        # Live detection loop
+        # Live detection loop - Enhanced for cloud environments
         if st.session_state.camera_active:
             try:
-                cap = cv2.VideoCapture(0)
-                if not cap.isOpened():
-                    status_placeholder.error("❌ Cannot access camera. Please ensure:")
-                    st.error("1. Camera permissions are granted")
-                    st.error("2. No other applications are using the camera") 
-                    st.error("3. Camera is properly connected")
-                    st.info("💡 You can still test face recognition by uploading photos below")
+                # Try multiple camera indices
+                cap = None
+                camera_found = False
+                
+                for camera_index in [0, 1, 2]:
+                    try:
+                        test_cap = cv2.VideoCapture(camera_index)
+                        if test_cap.isOpened():
+                            ret, frame = test_cap.read()
+                            if ret and frame is not None:
+                                cap = test_cap
+                                camera_found = True
+                                break
+                            else:
+                                test_cap.release()
+                    except:
+                        if 'test_cap' in locals():
+                            test_cap.release()
+                        continue
+                
+                if not camera_found or cap is None:
+                    status_placeholder.info("🔄 Camera not available in cloud environment")
+                    st.info("💡 This is normal for cloud-based applications. Use photo upload testing instead!")
                     st.session_state.camera_active = False
+                    
+                    # Auto-focus on photo upload section
+                    st.markdown("---")
+                    st.markdown("### 📸 **Try Face Recognition with Photo Upload Instead:**")
+                    st.markdown("Upload photos of trained employees to test the recognition system!")
                 else:
                     status_placeholder.success("📹 Live camera detection is active! Move in front of the camera.")
                     
@@ -491,13 +514,31 @@ def live_detection_page(db, recognizer):
                 status_placeholder.error(f"❌ Error: {str(e)}")
                 st.session_state.camera_active = False
         
-        # Photo upload for testing
-        st.subheader("📷 Upload Photo for Testing")
-        uploaded_file = st.file_uploader(
-            "Choose an image file", 
-            type=['jpg', 'jpeg', 'png'],
-            help="Upload a photo to test face detection and recognition"
-        )
+        # Enhanced photo upload for testing
+        st.markdown("---")
+        st.subheader("📷 Upload Photo for Face Recognition Testing")
+        st.markdown("**Test your trained employees by uploading their photos here:**")
+        
+        col_upload1, col_upload2 = st.columns([3, 1])
+        
+        with col_upload1:
+            uploaded_file = st.file_uploader(
+                "Choose an image file", 
+                type=['jpg', 'jpeg', 'png'],
+                help="Upload a photo to test face detection and recognition",
+                key="photo_test_upload"
+            )
+        
+        with col_upload2:
+            st.markdown("**Quick Test:**")
+            st.markdown("Upload photos of:")
+            trained_employees = list(recognizer.known_faces.keys()) if hasattr(recognizer, 'known_faces') else []
+            if trained_employees:
+                for emp_id in trained_employees[:3]:  # Show first 3
+                    emp_name = recognizer.known_faces[emp_id]['name']
+                    st.markdown(f"• {emp_name}")
+            else:
+                st.markdown("• Train employees first!")
         
         if uploaded_file is not None:
             try:
@@ -527,12 +568,29 @@ def live_detection_page(db, recognizer):
                 with col_b:
                     st.image(image_rgb, caption=f"Recognition Result ({len(faces)} faces)", use_container_width=True)
                 
-                # Show recognition results
-                for i, recognition in enumerate(recognized):
-                    if recognition:
-                        st.success(f"✅ Recognized: {recognition['name']} (Confidence: {recognition['confidence']:.1f}%)")
-                    else:
-                        st.info(f"👤 Face {i+1}: Unknown person")
+                # Show detailed recognition results
+                st.markdown("### 🎯 Recognition Results:")
+                
+                if len(faces) == 0:
+                    st.warning("⚠️ No faces detected in the uploaded image")
+                else:
+                    for i, recognition in enumerate(recognized):
+                        if recognition:
+                            st.success(f"✅ **Recognized Employee #{i+1}:**")
+                            st.markdown(f"   - **Name:** {recognition['name']}")
+                            st.markdown(f"   - **Employee ID:** {recognition['employee_id']}")
+                            st.markdown(f"   - **Confidence:** {recognition['confidence']:.1f}%")
+                            
+                            # Mark attendance for testing
+                            if st.button(f"Mark Attendance for {recognition['name']}", key=f"mark_{i}"):
+                                success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
+                                if success:
+                                    st.success(f"Attendance marked for {recognition['name']}!")
+                                else:
+                                    st.info(f"Attendance already marked for {recognition['name']} today")
+                        else:
+                            st.info(f"👤 **Face #{i+1}:** Unknown person (not in database)")
+                            st.markdown("   - This person needs to be trained first")
                         
             except Exception as e:
                 st.error(f"❌ Error processing image: {str(e)}")
