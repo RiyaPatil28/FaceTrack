@@ -385,49 +385,43 @@ def main():
     db = LiveDatabase()
     recognizer = LiveFaceRecognizer()
     
-    # Force retrain celebrities for better accuracy
+    # Load trained celebrities from database
     try:
-        import os
-        from PIL import Image
+        conn = db.get_connection()
+        cursor = conn.cursor()
         
-        # Celebrity training data - back to original working Dua Lipa photo
-        celebrities = {
-            'CELEB001': ('Emma Watson', 'attached_assets/image_1753715616096.png'),
-            'CELEB002': ('Emma Stone', 'attached_assets/image_1753715656090.png'),
-            'CELEB003': ('Dua Lipa', 'attached_assets/image_1753715683140.png'),  # Original working photo
-            'CELEB004': ('Harry Styles', 'attached_assets/image_1753715722850.png'),
-            'CELEB005': ('Taylor Swift', 'attached_assets/image_1753715780670.png'),
-            'CELEB006': ('Selena Gomez', 'attached_assets/image_1753715817958.png'),
-            'CELEB007': ('Zayn Malik', 'attached_assets/image_1753715838683.png'),
-        }
+        cursor.execute('''
+            SELECT employee_id, name, face_encoding 
+            FROM employees 
+            WHERE employee_id LIKE 'CELEB%'
+            ORDER BY employee_id
+        ''')
         
-        for emp_id, (name, image_path) in celebrities.items():
-            if os.path.exists(image_path):
-                try:
-                    image = Image.open(image_path)
-                    image_array = np.array(image)
-                    
-                    if len(image_array.shape) == 3:
-                        if image_array.shape[2] == 3:
-                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-                        elif image_array.shape[2] == 4:
-                            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
-                        else:
-                            continue
-                    else:
-                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
-                    
-                    success = recognizer.add_known_face(emp_id, name, image_bgr)
-                    if success:
-                        print(f"✓ Trained {name} successfully")
-                    else:
-                        print(f"✗ Failed to train {name}")
-                except Exception as e:
-                    print(f"Error training {name}: {e}")
-                    continue
+        celebrities_from_db = cursor.fetchall()
+        conn.close()
+        
+        for emp_id, name, face_encoding_binary in celebrities_from_db:
+            try:
+                # Convert binary back to numpy array
+                face_features = np.frombuffer(face_encoding_binary, dtype=np.float32)
+                
+                # Add to recognizer
+                recognizer.known_faces[emp_id] = {
+                    'name': name,
+                    'features': face_features,
+                    'trained_date': time.time()
+                }
+                print(f"✓ Loaded {name} ({emp_id}) from database")
+                
+            except Exception as e:
+                print(f"Error loading {name}: {e}")
+                continue
+        
+        print(f"Face recognition system loaded with {len(recognizer.known_faces)} trained celebrities from dataset")
+        
     except Exception as e:
-        print(f"Training error: {e}")
-        pass
+        print(f"Error loading celebrities from database: {e}")
+        print("Please run dataset training first with: python dataset_trainer.py")
     
     # Show training status
     trained_count = len(recognizer.known_faces)
