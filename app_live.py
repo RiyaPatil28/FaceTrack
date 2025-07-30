@@ -531,8 +531,7 @@ def live_detection_page(db, recognizer):
         st.markdown("### 📸 Simple Camera Recognition")
         st.markdown("Take photos for instant face recognition and attendance marking:")
         
-        # Show current state for debugging
-        st.info(f"Camera interface state: {st.session_state.show_camera_interface}")
+
         
         col_camera1, col_camera2 = st.columns([1, 1])
         with col_camera1:
