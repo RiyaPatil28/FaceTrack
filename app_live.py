@@ -546,7 +546,7 @@ def live_detection_page(db, recognizer):
                         continue
                 
                 if not camera_found or cap is None:
-                    # Show option to use dedicated camera page
+                    # Show option to use camera interface
                     status_placeholder.info("📹 Camera Recognition Available")
                     
                     st.markdown("### 📸 Simple Camera Recognition")
@@ -556,14 +556,19 @@ def live_detection_page(db, recognizer):
                     if 'show_camera_interface' not in st.session_state:
                         st.session_state.show_camera_interface = False
                     
+                    # Show current state for debugging
+                    st.info(f"Camera interface state: {st.session_state.show_camera_interface}")
+                    
                     col_camera1, col_camera2 = st.columns([1, 1])
                     with col_camera1:
-                        if st.button("🚀 Start Camera Recognition", type="primary", use_container_width=True):
+                        if st.button("🚀 Start Camera Recognition", type="primary", use_container_width=True, key="start_camera_btn"):
                             st.session_state.show_camera_interface = True
+                            st.rerun()
                     with col_camera2:
                         if st.session_state.show_camera_interface:
-                            if st.button("❌ Close Camera", type="secondary", use_container_width=True):
+                            if st.button("❌ Close Camera", type="secondary", use_container_width=True, key="close_camera_btn"):
                                 st.session_state.show_camera_interface = False
+                                st.rerun()
                         else:
                             st.info("Click Start to enable camera interface")
                     
