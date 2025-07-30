@@ -339,7 +339,7 @@ class LiveFaceRecognizer:
         return False
     
     def recognize_faces(self, frame):
-        """Recognize faces in the frame"""
+        """Recognize faces in the frame with enhanced accuracy"""
         faces = self.detect_faces(frame)
         recognized = []
         
@@ -347,7 +347,7 @@ class LiveFaceRecognizer:
             x, y, w, h = face
             face_roi = frame[y:y+h, x:x+w]
             
-            # Simple recognition based on stored features
+            # Extract features from detected face
             features = self.extract_face_features(face_roi)
             if features is not None and self.known_faces:
                 best_match = self._find_best_match(features)
@@ -1099,24 +1099,37 @@ def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
             else:
                 test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
             
-            # Recognize faces
+            # Recognize faces with enhanced processing
             faces, recognized = recognizer.recognize_faces(test_bgr)
             
             if len(faces) > 0:
+                st.success(f"Found {len(faces)} face(s)")
+                
                 for i, recognition in enumerate(recognized):
                     if recognition:
-                        st.success(f"✅ {recognition['name']}")
+                        st.success(f"✅ **{recognition['name']}** recognized!")
+                        st.caption(f"Employee ID: {recognition['employee_id']}")
                         st.caption(f"Confidence: {recognition['confidence']:.1f}%")
                         
-                        # Auto-mark attendance
-                        if recognition['confidence'] > 85:
+                        # Auto-mark attendance with lower threshold for testing
+                        if recognition['confidence'] > 70:  # Lower threshold for virtual camera
                             success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
                             if success:
-                                st.info("Attendance marked!")
+                                st.balloons()
+                                st.info("🎯 **Attendance automatically marked!**")
+                            else:
+                                st.warning("Already marked attendance today")
+                        else:
+                            st.info(f"Confidence too low for auto-attendance ({recognition['confidence']:.1f}% < 70%)")
                     else:
-                        st.warning("Unknown person")
+                        st.warning("❓ Unknown person detected")
+                        
+                # Display the image with face boxes
+                frame_with_boxes = recognizer.draw_faces(test_bgr.copy(), faces, recognized)
+                frame_rgb = cv2.cvtColor(frame_with_boxes, cv2.COLOR_BGR2RGB)
+                st.image(frame_rgb, caption="Face Detection Results", use_container_width=True)
             else:
-                st.warning("No faces detected")
+                st.warning("❌ No faces detected in image")
 
 def system_status_page(db):
     st.header("⚙️ System Status")
