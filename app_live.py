@@ -982,8 +982,9 @@ def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
                 source_type = "📹 Camera Capture" if camera_image is not None else "📁 File Upload"
                 camera_placeholder.image(image, caption=f"{source_type} - Training: {employee_name}", use_container_width=True)
                 
-                # Auto-train button
-                if st.button(f"🔴 TRAIN {employee_name}", type="primary", key="auto_train"):
+                # Auto-train button with better key
+                train_button_key = f"train_{employee_id}_{time.time()}"
+                if st.button(f"🔴 TRAIN {employee_name}", type="primary", key=train_button_key):
                     # Extract face features first
                     features = recognizer.extract_face_features(image_bgr)
                     
@@ -1006,6 +1007,12 @@ def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
                             
                             st.success(f"✅ {employee_name} trained successfully!")
                             st.balloons()
+                            
+                            # Force reload of trained employees
+                            recognizer.load_trained_employees()
+                            
+                            # Wait a moment for processing
+                            time.sleep(1)
                             st.experimental_rerun()
                         except Exception as e:
                             st.error(f"❌ Database error: {str(e)}")
