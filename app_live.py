@@ -167,6 +167,9 @@ class LiveFaceRecognizer:
         # Initialize feature detector
         self.sift = cv2.SIFT_create()
         self.matcher = cv2.BFMatcher()
+        
+        # Load trained employees from database
+        self.load_trained_employees()
     
     def detect_faces(self, frame):
         """Detect faces using Haar Cascade (fallback method)"""
@@ -193,6 +196,45 @@ class LiveFaceRecognizer:
                 cv2.putText(frame, 'Face Detected', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
         
         return frame
+    
+    def load_trained_employees(self):
+        """Load trained employees from database"""
+        try:
+            conn = sqlite3.connect('attendance_system.db')
+            cursor = conn.cursor()
+            
+            # Try both face_encoding and face_model columns for compatibility
+            cursor.execute('''
+                SELECT employee_id, name, face_encoding 
+                FROM employees 
+                WHERE face_encoding IS NOT NULL
+            ''')
+            
+            results = cursor.fetchall()
+            
+            for employee_id, name, face_encoding_blob in results:
+                if face_encoding_blob and len(face_encoding_blob) > 0:
+                    try:
+                        # Decode the face features
+                        features = np.frombuffer(face_encoding_blob, dtype=np.float32)
+                        
+                        self.known_faces[employee_id] = {
+                            'name': name,
+                            'features': features
+                        }
+                        
+                        print(f"Loaded trained employee: {name} ({employee_id})")
+                        
+                    except Exception as e:
+                        print(f"Error loading face data for {name}: {e}")
+                        continue
+            
+            conn.close()
+            print(f"Face recognition system initialized with {len(self.known_faces)} trained employees")
+            
+        except Exception as e:
+            print(f"Error loading trained employees: {e}")
+            print("Face recognition system initialized with 0 trained employees")
     
     def extract_face_features(self, image):
         """Extract face features for recognition using multiple methods"""
