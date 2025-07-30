@@ -31,7 +31,10 @@ This is a Python-based Smart Attendance System that uses computer vision technol
 - ✓ Added interactive training workflow in photo upload section
 - ✓ Created standalone photo_upload_trainer.py for dedicated training sessions
 - ✓ Enhanced photo testing with unknown face detection and training options
-- → Full cloud-based training system operational for environments without camera access
+- ✓ **Separated training and recognition concerns**: Training moved to Employee Management page
+- ✓ **Live Detection page now purely for recognition and attendance marking**
+- ✓ **Automatic attendance marking system with 70% confidence threshold**
+- → Full cloud-based training system operational with proper separation of concerns
 
 ## User Preferences
 
