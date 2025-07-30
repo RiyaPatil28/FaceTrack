@@ -546,31 +546,32 @@ def live_detection_page(db, recognizer):
                         continue
                 
                 if not camera_found or cap is None:
-                    # Show virtual recognition interface instead of training
-                    status_placeholder.info("📹 Virtual Recognition System Active")
+                    # Show option to use dedicated camera page
+                    status_placeholder.info("📹 Camera Recognition Available")
                     
-                    st.markdown("### 🎯 Face Recognition Test")
-                    st.markdown("Use camera or upload photo for face recognition and automatic attendance:")
+                    st.markdown("### 📸 Camera Recognition")
+                    st.markdown("For the best camera experience, use our dedicated camera recognition page:")
                     
-                    # Camera option for live recognition
-                    st.markdown("**📸 Camera Recognition:**")
-                    camera_recognition = st.camera_input("Take photo with camera for recognition")
+                    col_camera1, col_camera2 = st.columns([1, 1])
+                    with col_camera1:
+                        if st.button("🚀 Open Camera Recognition", type="primary", use_container_width=True):
+                            st.switch_page("camera_recognition.py")
+                    with col_camera2:
+                        st.info("Simplified interface for instant photo recognition and attendance marking")
                     
-                    # Upload option as alternative
-                    st.markdown("**📁 Or upload photo:**")
+                    st.markdown("---")
+                    st.markdown("### 🔄 Alternative: Upload Photo Test")
+                    st.markdown("Test recognition by uploading a photo below:")
                     test_upload = st.file_uploader(
                         "Upload photo for recognition",
                         type=['jpg', 'jpeg', 'png'],
                         key="live_recognition_test"
                     )
                     
-                    # Use camera photo if available, otherwise use upload
-                    recognition_source = camera_recognition if camera_recognition is not None else test_upload
-                    
-                    if recognition_source:
+                    if test_upload:
                         try:
-                            test_image = Image.open(recognition_source)
-                            source_info = "📸 Camera Photo" if camera_recognition is not None else "📁 Uploaded Photo"
+                            test_image = Image.open(test_upload)
+                            source_info = "📁 Uploaded Photo"
                             
                             # Display the image immediately
                             camera_placeholder.image(test_image, caption=f"{source_info} - Processing...", use_container_width=True)
