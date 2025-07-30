@@ -942,27 +942,31 @@ def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
                 
                 # Auto-train button
                 if st.button(f"🔴 TRAIN {employee_name}", type="primary", key="auto_train"):
-                    success = recognizer.add_known_face(employee_id, employee_name, image_bgr)
+                    # Extract face features first
+                    features = recognizer.extract_face_features(image_bgr)
                     
-                    if success:
-                        st.success(f"✅ {employee_name} trained successfully!")
-                        st.balloons()
+                    if features is not None:
+                        # Save to memory
+                        success = recognizer.add_known_face(employee_id, employee_name, image_bgr)
                         
-                        # Update database
+                        # Save to database
                         try:
                             conn = sqlite3.connect('attendance_system.db')
                             cursor = conn.cursor()
+                            features_binary = features.tobytes()
                             cursor.execute('''
                                 UPDATE employees 
                                 SET face_encoding = ?
                                 WHERE employee_id = ?
-                            ''', (b'trained', employee_id))
+                            ''', (features_binary, employee_id))
                             conn.commit()
                             conn.close()
-                        except:
-                            pass
-                        
-                        st.experimental_rerun()
+                            
+                            st.success(f"✅ {employee_name} trained successfully!")
+                            st.balloons()
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"❌ Database error: {str(e)}")
                     else:
                         st.error("❌ Training failed. No clear face detected.")
         else:
