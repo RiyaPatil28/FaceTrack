@@ -549,15 +549,84 @@ def live_detection_page(db, recognizer):
                     # Show option to use dedicated camera page
                     status_placeholder.info("📹 Camera Recognition Available")
                     
-                    st.markdown("### 📸 Camera Recognition")
-                    st.markdown("For the best camera experience, use our dedicated camera recognition page:")
+                    st.markdown("### 📸 Simple Camera Recognition")
+                    st.markdown("Take photos for instant face recognition and attendance marking:")
+                    
+                    # Initialize session state to control display
+                    if 'show_camera_interface' not in st.session_state:
+                        st.session_state.show_camera_interface = False
                     
                     col_camera1, col_camera2 = st.columns([1, 1])
                     with col_camera1:
-                        if st.button("🚀 Open Camera Recognition", type="primary", use_container_width=True):
-                            st.switch_page("camera_recognition.py")
+                        if st.button("🚀 Start Camera Recognition", type="primary", use_container_width=True):
+                            st.session_state.show_camera_interface = True
                     with col_camera2:
-                        st.info("Simplified interface for instant photo recognition and attendance marking")
+                        if st.session_state.show_camera_interface:
+                            if st.button("❌ Close Camera", type="secondary", use_container_width=True):
+                                st.session_state.show_camera_interface = False
+                        else:
+                            st.info("Click Start to enable camera interface")
+                    
+                    # Show camera interface if enabled
+                    if st.session_state.show_camera_interface:
+                        st.markdown("---")
+                        st.markdown("#### 📸 Camera Interface")
+                        
+                        # Simple camera input in a container
+                        camera_container = st.container()
+                        with camera_container:
+                            camera_photo = st.camera_input("📸 Take photo for recognition", key="simple_camera")
+                            
+                            if camera_photo is not None:
+                                # Process immediately in the same container
+                                image = Image.open(camera_photo)
+                                st.image(image, caption="📸 Photo captured - Processing...", use_container_width=True)
+                                
+                                # Convert for processing
+                                image_array = np.array(image)
+                                if len(image_array.shape) == 3:
+                                    if image_array.shape[2] == 3:
+                                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                                    else:
+                                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
+                                else:
+                                    image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                                
+                                # Recognition
+                                with st.spinner("🔄 Processing recognition..."):
+                                    faces, recognized = recognizer.recognize_faces(image_bgr)
+                                
+                                # Show results immediately
+                                st.markdown("#### 🎯 Recognition Results")
+                                
+                                if len(faces) > 0:
+                                    for i, recognition in enumerate(recognized):
+                                        if recognition:
+                                            col_result1, col_result2 = st.columns([2, 1])
+                                            with col_result1:
+                                                st.success(f"✅ **{recognition['name']}** recognized!")
+                                                st.write(f"Employee ID: {recognition['employee_id']}")
+                                                st.write(f"Confidence: {recognition['confidence']:.1f}%")
+                                            
+                                            with col_result2:
+                                                # Mark attendance
+                                                if recognition['confidence'] > 70:
+                                                    success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
+                                                    if success:
+                                                        st.balloons()
+                                                        st.success("🎯 Attendance marked!")
+                                                        current_time = datetime.now().strftime('%H:%M:%S')
+                                                        st.info(f"Time: {current_time}")
+                                                    else:
+                                                        st.warning("Already marked today")
+                                                else:
+                                                    st.warning(f"Low confidence: {recognition['confidence']:.1f}%")
+                                        else:
+                                            st.error("❌ Unknown person detected")
+                                            st.info("Train this person in Employee Management")
+                                else:
+                                    st.warning("❌ No faces detected in photo")
+                                    st.info("Please ensure face is clearly visible")
                     
                     st.markdown("---")
                     st.markdown("### 🔄 Alternative: Upload Photo Test")
