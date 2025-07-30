@@ -504,14 +504,12 @@ def live_detection_page(db, recognizer):
                         continue
                 
                 if not camera_found or cap is None:
-                    status_placeholder.info("🔄 Camera not available in cloud environment")
-                    st.info("💡 This is normal for cloud-based applications. Use photo upload testing instead!")
-                    st.session_state.camera_active = False
+                    # Try alternative camera methods for cloud environments
+                    status_placeholder.info("🔄 Initializing virtual camera system for cloud environment...")
                     
-                    # Auto-focus on photo upload section
-                    st.markdown("---")
-                    st.markdown("### 📸 **Try Face Recognition with Photo Upload Instead:**")
-                    st.markdown("Upload photos of trained employees to test the recognition system!")
+                    # Create a virtual camera demonstration
+                    virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db)
+                    st.session_state.camera_active = False
                 else:
                     status_placeholder.success("📹 Live camera detection is active! Move in front of the camera.")
                     
@@ -871,6 +869,167 @@ def reports_page(db):
                     st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
     else:
         st.info(f"No attendance records found for {selected_date}")
+
+def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
+    """Virtual camera system for cloud environments with real-time training"""
+    
+    # Create a simulated camera interface
+    status_placeholder.success("📹 Virtual Camera System Active - Real-time Training Mode")
+    
+    # Training interface
+    st.markdown("---")
+    st.subheader("🎯 Live Training System")
+    st.markdown("**Train employees with real-time face capture:**")
+    
+    col_train1, col_train2 = st.columns([2, 1])
+    
+    with col_train1:
+        # Get untrained employees
+        conn = sqlite3.connect('attendance_system.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT employee_id, name FROM employees 
+            WHERE face_encoding IS NULL 
+            ORDER BY name
+        ''')
+        untrained_employees = cursor.fetchall()
+        conn.close()
+        
+        if untrained_employees:
+            st.markdown("**Select Employee to Train:**")
+            employee_options = {f"{name} ({emp_id})": emp_id for emp_id, name in untrained_employees}
+            selected_employee = st.selectbox(
+                "Choose employee:",
+                options=list(employee_options.keys()),
+                key="live_train_select"
+            )
+            
+            # Real camera capture using browser
+            st.markdown("**📹 Live Camera Capture:**")
+            camera_image = st.camera_input("Take photo with camera for training")
+            
+            # Fallback upload option
+            st.markdown("**Or upload photo:**")
+            uploaded_photo = st.file_uploader(
+                "Upload employee photo if camera not available",
+                type=['jpg', 'jpeg', 'png'],
+                help="Upload a clear front-facing photo for training",
+                key="live_training_upload"
+            )
+            
+            # Handle both camera capture and file upload
+            photo_source = camera_image if camera_image is not None else uploaded_photo
+            
+            if photo_source and selected_employee:
+                employee_id = employee_options[selected_employee]
+                employee_name = selected_employee.split(' (')[0]
+                
+                # Process the image (camera or upload)
+                image = Image.open(photo_source)
+                image_array = np.array(image)
+                
+                if len(image_array.shape) == 3:
+                    if image_array.shape[2] == 3:
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                    else:
+                        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGBA2BGR)
+                else:
+                    image_bgr = cv2.cvtColor(image_array, cv2.COLOR_GRAY2BGR)
+                
+                # Display live preview with source info
+                source_type = "📹 Camera Capture" if camera_image is not None else "📁 File Upload"
+                camera_placeholder.image(image, caption=f"{source_type} - Training: {employee_name}", use_container_width=True)
+                
+                # Auto-train button
+                if st.button(f"🔴 TRAIN {employee_name}", type="primary", key="auto_train"):
+                    success = recognizer.add_known_face(employee_id, employee_name, image_bgr)
+                    
+                    if success:
+                        st.success(f"✅ {employee_name} trained successfully!")
+                        st.balloons()
+                        
+                        # Update database
+                        try:
+                            conn = sqlite3.connect('attendance_system.db')
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                UPDATE employees 
+                                SET face_encoding = ?
+                                WHERE employee_id = ?
+                            ''', (b'trained', employee_id))
+                            conn.commit()
+                            conn.close()
+                        except:
+                            pass
+                        
+                        st.experimental_rerun()
+                    else:
+                        st.error("❌ Training failed. No clear face detected.")
+        else:
+            st.success("🎉 All employees are trained!")
+            st.info("System ready for live recognition.")
+    
+    with col_train2:
+        st.markdown("**Training Status:**")
+        
+        # Show training progress
+        conn = sqlite3.connect('attendance_system.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM employees')
+        total_employees = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM employees WHERE face_encoding IS NOT NULL')
+        trained_employees = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        st.metric("Total Employees", total_employees)
+        st.metric("Trained", trained_employees)
+        
+        if total_employees > 0:
+            progress = trained_employees / total_employees
+            st.progress(progress)
+            st.caption(f"{progress*100:.1f}% Complete")
+        
+        # Live recognition test
+        st.markdown("**Test Recognition:**")
+        test_upload = st.file_uploader(
+            "Upload test photo",
+            type=['jpg', 'jpeg', 'png'],
+            key="test_recognition"
+        )
+        
+        if test_upload:
+            test_image = Image.open(test_upload)
+            test_array = np.array(test_image)
+            
+            if len(test_array.shape) == 3:
+                if test_array.shape[2] == 3:
+                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGB2BGR)
+                else:
+                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGBA2BGR)
+            else:
+                test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
+            
+            # Recognize faces
+            faces, recognized = recognizer.recognize_faces(test_bgr)
+            
+            if len(faces) > 0:
+                for i, recognition in enumerate(recognized):
+                    if recognition:
+                        st.success(f"✅ {recognition['name']}")
+                        st.caption(f"Confidence: {recognition['confidence']:.1f}%")
+                        
+                        # Auto-mark attendance
+                        if recognition['confidence'] > 85:
+                            success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
+                            if success:
+                                st.info("Attendance marked!")
+                    else:
+                        st.warning("Unknown person")
+            else:
+                st.warning("No faces detected")
 
 def system_status_page(db):
     st.header("⚙️ System Status")
