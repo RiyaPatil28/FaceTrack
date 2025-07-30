@@ -387,13 +387,13 @@ def main():
     
     # Load trained celebrities from database
     try:
-        conn = db.get_connection()
+        conn = sqlite3.connect('attendance_system.db')
         cursor = conn.cursor()
         
         cursor.execute('''
             SELECT employee_id, name, face_encoding 
             FROM employees 
-            WHERE employee_id LIKE 'CELEB%'
+            WHERE employee_id LIKE 'CELEB%' AND face_encoding IS NOT NULL
             ORDER BY employee_id
         ''')
         
@@ -421,7 +421,7 @@ def main():
         
     except Exception as e:
         print(f"Error loading celebrities from database: {e}")
-        print("Please run dataset training first with: python dataset_trainer.py")
+        print("Use the photo upload feature to train employees for face recognition")
     
     # Show training status
     trained_count = len(recognizer.known_faces)
@@ -632,6 +632,56 @@ def live_detection_page(db, recognizer):
                 
                 # Show detailed recognition results
                 st.markdown("### 🎯 Recognition Results:")
+                
+                # Add training option for unknown faces
+                unknown_faces = [i for i, rec in enumerate(recognized) if rec is None]
+                if unknown_faces:
+                    st.markdown("---")
+                    st.subheader("🔄 Train Unknown Face")
+                    
+                    # Get list of employees without face training
+                    conn = sqlite3.connect('attendance_system.db')
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT employee_id, name FROM employees 
+                        WHERE face_encoding IS NULL 
+                        ORDER BY name
+                    ''')
+                    untrained_employees = cursor.fetchall()
+                    conn.close()
+                    
+                    if untrained_employees:
+                        st.write("Select an employee to train with this photo:")
+                        
+                        employee_options = {f"{name} ({emp_id})": emp_id for emp_id, name in untrained_employees}
+                        selected_employee = st.selectbox(
+                            "Choose employee to train:",
+                            options=list(employee_options.keys()),
+                            key="train_select"
+                        )
+                        
+                        if st.button("🎯 Train Selected Employee", key="train_btn"):
+                            if selected_employee:
+                                employee_id = employee_options[selected_employee]
+                                employee_name = selected_employee.split(' (')[0]
+                                
+                                # Extract features from the first unknown face
+                                first_unknown = unknown_faces[0]
+                                face = faces[first_unknown]
+                                x, y, w, h = face
+                                face_roi = image_bgr[y:y+h, x:x+w]
+                                
+                                # Train this face
+                                success = recognizer.add_known_face(employee_id, employee_name, face_roi)
+                                
+                                if success:
+                                    st.success(f"Successfully trained {employee_name}!")
+                                    st.info("The employee will now be recognized in future uploads.")
+                                    st.experimental_rerun()
+                                else:
+                                    st.error("Training failed. Please try with a clearer photo.")
+                    else:
+                        st.info("All employees have been trained. Add new employees in the Employee Management section.")
                 
                 if len(faces) == 0:
                     st.warning("⚠️ No faces detected in the uploaded image")

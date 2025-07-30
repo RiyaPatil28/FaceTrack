@@ -23,7 +23,15 @@ This is a Python-based Smart Attendance System that uses computer vision technol
 - ✓ Mobile Integration page in main app for API testing
 - ✓ Comprehensive API endpoints: status, employees, attendance, reports, export
 - ✓ Celebrity employee training system (Emma Watson, Emma Stone, Dua Lipa, Harry Styles, Taylor Swift, Selena Gomez, Zayn Malik)
-- → Ongoing face recognition accuracy improvements for Dua Lipa identification
+
+**January 30, 2025 - Cloud-Optimized Photo Upload Training:**
+- ✓ Replaced celebrity image training with CSV dataset processing (31 unique celebrities)
+- ✓ Fixed database connection issues for cloud environment compatibility
+- ✓ Implemented photo upload-based face training system for cloud deployment
+- ✓ Added interactive training workflow in photo upload section
+- ✓ Created standalone photo_upload_trainer.py for dedicated training sessions
+- ✓ Enhanced photo testing with unknown face detection and training options
+- → Full cloud-based training system operational for environments without camera access
 
 ## User Preferences
 
