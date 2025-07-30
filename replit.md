@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a Python-based Smart Attendance System that uses computer vision technology to automatically track employee attendance. The system currently uses OpenCV for face detection and Streamlit for the web interface, with plans to integrate full face recognition capabilities. It stores employee data and attendance records in a local SQLite database.
+This is a comprehensive Python-based Smart Attendance System that uses advanced computer vision technology to automatically track employee attendance through photo-based facial recognition. The system features a clean Streamlit web interface optimized for cloud environments, complete employee management, real-time recognition processing, and mobile API integration. It stores employee data and attendance records in a local SQLite database with secure face encoding storage.
 
 ## Recent Changes
 
