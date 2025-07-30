@@ -966,7 +966,33 @@ def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
                     else:
                         st.error("❌ Training failed. No clear face detected.")
         else:
-            st.success("🎉 All employees are trained!")
+            st.info("🎉 All employees are trained!")
+            st.markdown("**Add new employees first:**")
+            
+            # Quick employee addition interface
+            with st.expander("➕ Add New Employee"):
+                new_emp_id = st.text_input("Employee ID", placeholder="EMP001")
+                new_emp_name = st.text_input("Employee Name", placeholder="John Doe") 
+                new_emp_dept = st.text_input("Department", placeholder="Engineering")
+                
+                if st.button("Add Employee", type="primary"):
+                    if new_emp_id and new_emp_name and new_emp_dept:
+                        try:
+                            conn = sqlite3.connect('attendance_system.db')
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                INSERT INTO employees (employee_id, name, department, created_date)
+                                VALUES (?, ?, ?, ?)
+                            ''', (new_emp_id, new_emp_name, new_emp_dept, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Added {new_emp_name}!")
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+                    else:
+                        st.error("Please fill all fields")
+            
             st.info("System ready for live recognition.")
     
     with col_train2:
@@ -992,16 +1018,24 @@ def virtual_camera_demo(camera_placeholder, status_placeholder, recognizer, db):
             st.progress(progress)
             st.caption(f"{progress*100:.1f}% Complete")
         
-        # Live recognition test
+        # Live recognition test with camera
         st.markdown("**Test Recognition:**")
+        
+        # Camera option for testing
+        test_camera = st.camera_input("Take photo to test recognition")
+        
+        # Upload option as fallback
         test_upload = st.file_uploader(
-            "Upload test photo",
+            "Or upload test photo",
             type=['jpg', 'jpeg', 'png'],
             key="test_recognition"
         )
         
-        if test_upload:
-            test_image = Image.open(test_upload)
+        # Process either camera or upload
+        test_source = test_camera if test_camera is not None else test_upload
+        
+        if test_source:
+            test_image = Image.open(test_source)
             test_array = np.array(test_image)
             
             if len(test_array.shape) == 3:
