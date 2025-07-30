@@ -581,34 +581,53 @@ def live_detection_page(db, recognizer):
                             test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
                         
                         # Display the image with source information
-                        camera_placeholder.image(test_image, caption=f"{source_info} - Ready for Recognition", use_container_width=True)
+                        camera_placeholder.image(test_image, caption=f"{source_info} - Processing Recognition...", use_container_width=True)
                         
                         # Recognize faces
                         faces, recognized = recognizer.recognize_faces(test_bgr)
                         
+                        # Show recognition results immediately
+                        st.markdown("---")
+                        st.subheader("🎯 Recognition Results")
+                        
                         if len(faces) > 0:
-                            status_placeholder.success(f"Found {len(faces)} face(s)")
+                            status_placeholder.success(f"✅ Found {len(faces)} face(s) - Processing complete!")
                             
                             for i, recognition in enumerate(recognized):
                                 if recognition:
-                                    st.success(f"✅ **{recognition['name']}** recognized!")
-                                    st.caption(f"Employee ID: {recognition['employee_id']}")
-                                    st.caption(f"Confidence: {recognition['confidence']:.1f}%")
+                                    col1, col2 = st.columns([2, 1])
+                                    with col1:
+                                        st.success(f"**✅ {recognition['name']} Recognized!**")
+                                        st.write(f"Employee ID: `{recognition['employee_id']}`")
+                                        st.write(f"Confidence: **{recognition['confidence']:.1f}%**")
                                     
-                                    # Auto-mark attendance
-                                    if recognition['confidence'] > 70:
-                                        success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
-                                        if success:
-                                            st.balloons()
-                                            st.info("🎯 **Attendance automatically marked!**")
+                                    with col2:
+                                        # Auto-mark attendance
+                                        if recognition['confidence'] > 70:
+                                            success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
+                                            if success:
+                                                st.balloons()
+                                                st.success("🎯 **Attendance Marked!**")
+                                                
+                                                # Show attendance confirmation
+                                                from datetime import datetime
+                                                current_time = datetime.now().strftime('%H:%M:%S')
+                                                st.info(f"Marked at: {current_time}")
+                                            else:
+                                                st.warning("⚠️ Already marked today")
                                         else:
-                                            st.warning("Already marked attendance today")
-                                    else:
-                                        st.info(f"Confidence too low for auto-attendance ({recognition['confidence']:.1f}% < 70%)")
+                                            st.warning(f"⚠️ Low confidence ({recognition['confidence']:.1f}%)")
+                                            st.caption("Needs >70% for auto-attendance")
+                                    
+                                    st.divider()
                                 else:
-                                    st.warning("❓ Unknown person detected")
+                                    st.error("❌ **Unknown Person**")
+                                    st.caption("Face detected but not recognized")
+                                    st.info("💡 Train this person in Employee Management")
                         else:
-                            status_placeholder.warning("No faces detected")
+                            status_placeholder.warning("⚠️ No faces detected in image")
+                            st.warning("**No faces found**")
+                            st.info("Please ensure face is clearly visible and well-lit")
                     
                     st.session_state.camera_active = False
                 else:
