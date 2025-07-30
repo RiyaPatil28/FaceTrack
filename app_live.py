@@ -553,19 +553,28 @@ def live_detection_page(db, recognizer):
                     st.markdown("Use camera or upload photo for face recognition and automatic attendance:")
                     
                     # Initialize session state for photo persistence
-                    if 'last_camera_photo' not in st.session_state:
-                        st.session_state.last_camera_photo = None
+                    if 'last_photo_hash' not in st.session_state:
+                        st.session_state.last_photo_hash = None
                     if 'recognition_results' not in st.session_state:
                         st.session_state.recognition_results = None
+                    if 'processed_photo' not in st.session_state:
+                        st.session_state.processed_photo = None
                     
                     # Camera option for live recognition
                     st.markdown("**📸 Camera Recognition:**")
                     camera_recognition = st.camera_input("Take photo with camera for recognition")
                     
-                    # Check if new photo was taken
-                    if camera_recognition is not None and camera_recognition != st.session_state.last_camera_photo:
-                        st.session_state.last_camera_photo = camera_recognition
-                        st.session_state.recognition_results = None  # Reset results for new photo
+                    # Check if new photo was taken using hash comparison
+                    current_photo_hash = None
+                    if camera_recognition is not None:
+                        import hashlib
+                        current_photo_hash = hashlib.md5(camera_recognition.getvalue()).hexdigest()
+                        
+                        # If this is a new photo, reset results
+                        if current_photo_hash != st.session_state.last_photo_hash:
+                            st.session_state.last_photo_hash = current_photo_hash
+                            st.session_state.recognition_results = None
+                            st.session_state.processed_photo = camera_recognition
                     
                     # Upload option as alternative
                     st.markdown("**📁 Or upload photo:**")
@@ -579,8 +588,8 @@ def live_detection_page(db, recognizer):
                     recognition_source = camera_recognition if camera_recognition is not None else test_upload
                     
                     if recognition_source:
-                        # Only process if we haven't already processed this photo or if it's a new photo
-                        if st.session_state.recognition_results is None or recognition_source != st.session_state.last_camera_photo:
+                        # Only process if we don't have results for this photo
+                        if st.session_state.recognition_results is None:
                             try:
                                 test_image = Image.open(recognition_source)
                                 source_info = "📸 Camera Photo" if camera_recognition is not None else "📁 Uploaded Photo"
@@ -679,10 +688,16 @@ def live_detection_page(db, recognizer):
                                 st.info("Please ensure face is clearly visible and well-lit")
                             
                             # Add button to clear results and take new photo
-                            if st.button("📸 Take New Photo", type="secondary"):
-                                st.session_state.recognition_results = None
-                                st.session_state.last_camera_photo = None
-                                st.experimental_rerun()
+                            col_btn1, col_btn2 = st.columns(2)
+                            with col_btn1:
+                                if st.button("📸 Take New Photo", type="secondary"):
+                                    st.session_state.recognition_results = None
+                                    st.session_state.last_photo_hash = None
+                                    st.session_state.processed_photo = None
+                                    st.rerun()
+                            with col_btn2:
+                                if st.button("📊 View Reports", type="secondary"):
+                                    st.switch_page("pages/Reports.py")
                     
                     st.session_state.camera_active = False
                 else:
