@@ -550,17 +550,26 @@ def live_detection_page(db, recognizer):
                     status_placeholder.info("📹 Virtual Recognition System Active")
                     
                     st.markdown("### 🎯 Face Recognition Test")
-                    st.markdown("Upload a photo to test face recognition and automatic attendance:")
+                    st.markdown("Use camera or upload photo for face recognition and automatic attendance:")
                     
-                    # Recognition test interface
+                    # Camera option for live recognition
+                    st.markdown("**📸 Camera Recognition:**")
+                    camera_recognition = st.camera_input("Take photo with camera for recognition")
+                    
+                    # Upload option as alternative
+                    st.markdown("**📁 Or upload photo:**")
                     test_upload = st.file_uploader(
                         "Upload photo for recognition",
                         type=['jpg', 'jpeg', 'png'],
                         key="live_recognition_test"
                     )
                     
-                    if test_upload:
-                        test_image = Image.open(test_upload)
+                    # Use camera photo if available, otherwise use upload
+                    recognition_source = camera_recognition if camera_recognition is not None else test_upload
+                    
+                    if recognition_source:
+                        test_image = Image.open(recognition_source)
+                        source_info = "📸 Camera Photo" if camera_recognition is not None else "📁 Uploaded Photo"
                         test_array = np.array(test_image)
                         
                         if len(test_array.shape) == 3:
@@ -571,8 +580,8 @@ def live_detection_page(db, recognizer):
                         else:
                             test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
                         
-                        # Display uploaded image
-                        camera_placeholder.image(test_image, caption="Photo for Recognition", use_container_width=True)
+                        # Display the image with source information
+                        camera_placeholder.image(test_image, caption=f"{source_info} - Ready for Recognition", use_container_width=True)
                         
                         # Recognize faces
                         faces, recognized = recognizer.recognize_faces(test_bgr)
