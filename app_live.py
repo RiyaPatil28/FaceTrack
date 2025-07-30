@@ -552,9 +552,20 @@ def live_detection_page(db, recognizer):
                     st.markdown("### 🎯 Face Recognition Test")
                     st.markdown("Use camera or upload photo for face recognition and automatic attendance:")
                     
+                    # Initialize session state for photo persistence
+                    if 'last_camera_photo' not in st.session_state:
+                        st.session_state.last_camera_photo = None
+                    if 'recognition_results' not in st.session_state:
+                        st.session_state.recognition_results = None
+                    
                     # Camera option for live recognition
                     st.markdown("**📸 Camera Recognition:**")
                     camera_recognition = st.camera_input("Take photo with camera for recognition")
+                    
+                    # Check if new photo was taken
+                    if camera_recognition is not None and camera_recognition != st.session_state.last_camera_photo:
+                        st.session_state.last_camera_photo = camera_recognition
+                        st.session_state.recognition_results = None  # Reset results for new photo
                     
                     # Upload option as alternative
                     st.markdown("**📁 Or upload photo:**")
@@ -568,40 +579,65 @@ def live_detection_page(db, recognizer):
                     recognition_source = camera_recognition if camera_recognition is not None else test_upload
                     
                     if recognition_source:
-                        try:
-                            test_image = Image.open(recognition_source)
-                            source_info = "📸 Camera Photo" if camera_recognition is not None else "📁 Uploaded Photo"
-                            
-                            # Display the image immediately
-                            camera_placeholder.image(test_image, caption=f"{source_info} - Processing...", use_container_width=True)
-                            
-                            # Convert image safely
-                            test_array = np.array(test_image)
-                            
-                            if len(test_array.shape) == 3:
-                                if test_array.shape[2] == 3:
-                                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGB2BGR)
-                                elif test_array.shape[2] == 4:
-                                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGBA2BGR)
-                                else:
-                                    st.error("❌ Unsupported image format")
-                                    st.stop()
-                            else:
-                                test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
-                            
-                            status_placeholder.info("🔄 Processing face recognition...")
-                            
-                            # Recognize faces with error handling
+                        # Only process if we haven't already processed this photo or if it's a new photo
+                        if st.session_state.recognition_results is None or recognition_source != st.session_state.last_camera_photo:
                             try:
-                                faces, recognized = recognizer.recognize_faces(test_bgr)
+                                test_image = Image.open(recognition_source)
+                                source_info = "📸 Camera Photo" if camera_recognition is not None else "📁 Uploaded Photo"
                                 
-                                # Show recognition results immediately
-                                st.markdown("---")
-                                st.subheader("🎯 Recognition Results")
+                                # Display the image immediately
+                                camera_placeholder.image(test_image, caption=f"{source_info} - Processing...", use_container_width=True)
+                                
+                                # Convert image safely
+                                test_array = np.array(test_image)
+                                
+                                if len(test_array.shape) == 3:
+                                    if test_array.shape[2] == 3:
+                                        test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGB2BGR)
+                                    elif test_array.shape[2] == 4:
+                                        test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGBA2BGR)
+                                    else:
+                                        st.error("❌ Unsupported image format")
+                                        st.stop()
+                                else:
+                                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
+                                
+                                status_placeholder.info("🔄 Processing face recognition...")
+                                
+                                # Recognize faces with error handling
+                                try:
+                                    faces, recognized = recognizer.recognize_faces(test_bgr)
+                                    
+                                    # Store results in session state for persistence
+                                    st.session_state.recognition_results = {
+                                        'faces': faces,
+                                        'recognized': recognized,
+                                        'image': test_image,
+                                        'source_info': source_info
+                                    }
+                                    
+                                except Exception as e:
+                                    st.error(f"❌ Face recognition error: {str(e)}")
+                                    status_placeholder.error("Face recognition failed")
+                                    st.stop()
+                                
                             except Exception as e:
-                                st.error(f"❌ Face recognition error: {str(e)}")
-                                status_placeholder.error("Face recognition failed")
-                                st.stop()
+                                st.error(f"❌ Processing error: {str(e)}")
+                                status_placeholder.error("Image processing failed")
+                                st.info("Please try again with a different photo")
+                        
+                        # Display persistent results
+                        if st.session_state.recognition_results:
+                            results = st.session_state.recognition_results
+                            faces = results['faces']
+                            recognized = results['recognized']
+                            
+                            # Update display with stored image
+                            camera_placeholder.image(results['image'], caption=f"{results['source_info']} - Recognition Complete", use_container_width=True)
+                            
+                            # Show recognition results
+                            st.markdown("---")
+                            st.subheader("🎯 Recognition Results")
                             
                             if len(faces) > 0:
                                 status_placeholder.success(f"✅ Found {len(faces)} face(s) - Processing complete!")
@@ -642,10 +678,11 @@ def live_detection_page(db, recognizer):
                                 st.warning("**No faces found**")
                                 st.info("Please ensure face is clearly visible and well-lit")
                             
-                        except Exception as e:
-                            st.error(f"❌ Processing error: {str(e)}")
-                            status_placeholder.error("Image processing failed")
-                            st.info("Please try again with a different photo")
+                            # Add button to clear results and take new photo
+                            if st.button("📸 Take New Photo", type="secondary"):
+                                st.session_state.recognition_results = None
+                                st.session_state.last_camera_photo = None
+                                st.experimental_rerun()
                     
                     st.session_state.camera_active = False
                 else:
