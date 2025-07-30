@@ -503,24 +503,11 @@ def live_detection_page(db, recognizer):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("Camera Feed")
+        st.subheader("Camera Recognition")
         
-        # Camera controls
-        camera_col1, camera_col2, camera_col3 = st.columns(3)
-        with camera_col1:
-            if st.button("🎥 Start Live Detection", type="primary"):
-                st.session_state.camera_active = True
-        with camera_col2:
-            if st.button("⏹️ Stop Detection"):
-                st.session_state.camera_active = False
-        with camera_col3:
-            # Show number of trained faces
-            trained_count = len(recognizer.known_faces) if hasattr(recognizer, 'known_faces') else 0
-            st.metric("Trained Faces", trained_count)
-        
-        # Camera feed placeholder
-        camera_placeholder = st.empty()
-        status_placeholder = st.empty()
+        # Show number of trained faces
+        trained_count = len(recognizer.known_faces) if hasattr(recognizer, 'known_faces') else 0
+        st.metric("Trained Faces", trained_count)
         
         # Camera interface section - Always available for cloud environments
         # Initialize session state to control display
@@ -530,8 +517,6 @@ def live_detection_page(db, recognizer):
         # Show simple camera recognition interface
         st.markdown("### 📸 Simple Camera Recognition")
         st.markdown("Take photos for instant face recognition and attendance marking:")
-        
-
         
         col_camera1, col_camera2 = st.columns([1, 1])
         with col_camera1:
@@ -607,192 +592,79 @@ def live_detection_page(db, recognizer):
                         st.warning("❌ No faces detected in photo")
                         st.info("Please ensure face is clearly visible")
 
-        # Live detection loop - Enhanced for cloud environments  
-        if st.session_state.camera_active:
+        st.markdown("---")
+        st.markdown("### 🔄 Alternative: Upload Photo Test")
+        st.markdown("Test recognition by uploading a photo below:")
+        test_upload = st.file_uploader(
+            "Upload photo for recognition",
+            type=['jpg', 'jpeg', 'png'],
+            key="live_recognition_test"
+        )
+        
+        if test_upload:
             try:
-                # Try multiple camera indices
-                cap = None
-                camera_found = False
+                test_image = Image.open(test_upload)
                 
-                for camera_index in [0, 1, 2]:
-                    try:
-                        test_cap = cv2.VideoCapture(camera_index)
-                        if test_cap.isOpened():
-                            ret, frame = test_cap.read()
-                            if ret and frame is not None:
-                                cap = test_cap
-                                camera_found = True
-                                break
-                            else:
-                                test_cap.release()
-                    except:
-                        if 'test_cap' in locals():
-                            test_cap.release()
-                        continue
+                # Display the image immediately
+                st.image(test_image, caption="📁 Uploaded Photo - Processing...", use_container_width=True)
                 
-                if not camera_found or cap is None:
-                    # Fallback message for physical camera not found
-                    status_placeholder.info("📹 Physical camera not available - Using photo capture instead")
-                    
-                    st.markdown("---")
-                    st.markdown("### 🔄 Alternative: Upload Photo Test")
-                    st.markdown("Test recognition by uploading a photo below:")
-                    test_upload = st.file_uploader(
-                        "Upload photo for recognition",
-                        type=['jpg', 'jpeg', 'png'],
-                        key="live_recognition_test"
-                    )
-                    
-                    if test_upload:
-                        try:
-                            test_image = Image.open(test_upload)
-                            source_info = "📁 Uploaded Photo"
-                            
-                            # Display the image immediately
-                            camera_placeholder.image(test_image, caption=f"{source_info} - Processing...", use_container_width=True)
-                            
-                            # Convert image safely
-                            test_array = np.array(test_image)
-                            
-                            if len(test_array.shape) == 3:
-                                if test_array.shape[2] == 3:
-                                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGB2BGR)
-                                elif test_array.shape[2] == 4:
-                                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGBA2BGR)
-                                else:
-                                    st.error("❌ Unsupported image format")
-                                    st.stop()
-                            else:
-                                test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
-                            
-                            status_placeholder.info("🔄 Processing face recognition...")
-                            
-                            # Recognize faces with error handling
-                            faces, recognized = recognizer.recognize_faces(test_bgr)
-                            
-                            # Update display with results
-                            camera_placeholder.image(test_image, caption=f"{source_info} - Recognition Complete", use_container_width=True)
-                            
-                            # Show recognition results immediately
-                            st.markdown("---")
-                            st.subheader("🎯 Recognition Results")
-                            
-                            if len(faces) > 0:
-                                status_placeholder.success(f"✅ Found {len(faces)} face(s) - Processing complete!")
-                                
-                                for i, recognition in enumerate(recognized):
-                                    if recognition:
-                                        col1, col2 = st.columns([2, 1])
-                                        with col1:
-                                            st.success(f"**✅ {recognition['name']} Recognized!**")
-                                            st.write(f"Employee ID: `{recognition['employee_id']}`")
-                                            st.write(f"Confidence: **{recognition['confidence']:.1f}%**")
-                                        
-                                        with col2:
-                                            # Auto-mark attendance
-                                            if recognition['confidence'] > 70:
-                                                success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
-                                                if success:
-                                                    st.balloons()
-                                                    st.success("🎯 **Attendance Marked!**")
-                                                    
-                                                    # Show attendance confirmation
-                                                    from datetime import datetime
-                                                    current_time = datetime.now().strftime('%H:%M:%S')
-                                                    st.info(f"Marked at: {current_time}")
-                                                else:
-                                                    st.warning("⚠️ Already marked today")
-                                            else:
-                                                st.warning(f"⚠️ Low confidence ({recognition['confidence']:.1f}%)")
-                                                st.caption("Needs >70% for auto-attendance")
-                                        
-                                        st.divider()
-                                    else:
-                                        st.error("❌ **Unknown Person**")
-                                        st.caption("Face detected but not recognized")
-                                        st.info("💡 Train this person in Employee Management")
-                            else:
-                                status_placeholder.warning("⚠️ No faces detected in image")
-                                st.warning("**No faces found**")
-                                st.info("Please ensure face is clearly visible and well-lit")
-                            
-                            # Add navigation buttons
-                            col_btn1, col_btn2 = st.columns(2)
-                            with col_btn1:
-                                st.info("📸 Take another photo above to recognize again")
-                            with col_btn2:
-                                if st.button("📊 View Reports", type="secondary"):
-                                    st.switch_page("pages/Reports.py")
-                                    
-                        except Exception as e:
-                            st.error(f"❌ Processing error: {str(e)}")
-                            status_placeholder.error("Image processing failed")
-                            st.info("Please try again with a different photo")
-                    
-                    st.session_state.camera_active = False
+                # Convert image safely
+                test_array = np.array(test_image)
+                
+                if len(test_array.shape) == 3:
+                    if test_array.shape[2] == 3:
+                        test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGB2BGR)
+                    elif test_array.shape[2] == 4:
+                        test_bgr = cv2.cvtColor(test_array, cv2.COLOR_RGBA2BGR)
+                    else:
+                        st.error("❌ Unsupported image format")
+                        st.stop()
                 else:
-                    status_placeholder.success("📹 Live camera detection is active! Move in front of the camera.")
-                    
-                    # Create a container for real-time updates
-                    detection_container = st.container()
-                    
-                    # Process frames continuously
-                    frame_count = 0
-                    max_frames = 300  # Run for about 30 seconds at 10fps
-                    
-                    while st.session_state.camera_active and frame_count < max_frames:
-                        ret, frame = cap.read()
-                        if not ret:
-                            status_placeholder.warning("⚠️ Failed to read from camera")
-                            break
-                        
-                        # Process every 3rd frame for better performance
-                        if frame_count % 3 == 0:
-                            # Detect and recognize faces
-                            faces, recognized = recognizer.recognize_faces(frame)
+                    test_bgr = cv2.cvtColor(test_array, cv2.COLOR_GRAY2BGR)
+                
+                # Recognize faces with error handling
+                faces, recognized = recognizer.recognize_faces(test_bgr)
+                
+                # Show recognition results immediately
+                st.markdown("---")
+                st.subheader("🎯 Recognition Results")
+                
+                if len(faces) > 0:
+                    for i, recognition in enumerate(recognized):
+                        if recognition:
+                            col1, col2 = st.columns([2, 1])
+                            with col1:
+                                st.success(f"**✅ {recognition['name']} Recognized!**")
+                                st.write(f"Employee ID: `{recognition['employee_id']}`")
+                                st.write(f"Confidence: **{recognition['confidence']:.1f}%**")
                             
-                            # Draw faces with recognition results
-                            frame_with_faces = recognizer.draw_faces(frame, faces, recognized)
-                            
-                            # Mark attendance for recognized faces
-                            for i, recognition in enumerate(recognized):
-                                if recognition:
-                                    emp_id = recognition['employee_id']
-                                    current_time = time.time()
-                                    last_time = st.session_state.last_recognition.get(emp_id, 0)
-                                    
-                                    # Prevent duplicate entries within 30 seconds
-                                    if current_time - last_time > 30:
-                                        success = db.mark_attendance(emp_id, recognition['confidence'])
-                                        if success:
-                                            st.session_state.last_recognition[emp_id] = current_time
-                                            # Show attendance notification
-                                            with detection_container:
-                                                st.success(f"✅ Attendance marked: {recognition['name']} (Confidence: {recognition['confidence']:.1f}%)")
-                            
-                            # Display current frame with detection results
-                            frame_rgb = cv2.cvtColor(frame_with_faces, cv2.COLOR_BGR2RGB)
-                            camera_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
-                            
-                            # Show live detection status
-                            if len(faces) > 0:
-                                if any(recognized):
-                                    status_placeholder.success(f"👤 {len(faces)} face(s) detected - Recognition active!")
+                            with col2:
+                                # Auto-mark attendance
+                                if recognition['confidence'] > 70:
+                                    success = db.mark_attendance(recognition['employee_id'], recognition['confidence'])
+                                    if success:
+                                        st.balloons()
+                                        st.success("🎯 **Attendance Marked!**")
+                                        current_time = datetime.now().strftime('%H:%M:%S')
+                                        st.info(f"Marked at: {current_time}")
+                                    else:
+                                        st.warning("⚠️ Already marked today")
                                 else:
-                                    status_placeholder.info(f"👤 {len(faces)} face(s) detected - No matches found")
-                            else:
-                                status_placeholder.info("🔍 Scanning for faces...")
+                                    st.warning(f"⚠️ Low confidence ({recognition['confidence']:.1f}%)")
+                                    st.caption("Needs >70% for auto-attendance")
+                            
+                            st.divider()
+                        else:
+                            st.error("❌ **Unknown Person**")
+                            st.caption("Face detected but not recognized")
+                            st.info("💡 Train this person in Employee Management")
+                else:
+                    st.warning("**No faces found**")
+                    st.info("Please ensure face is clearly visible and well-lit")
                         
-                        frame_count += 1
-                        time.sleep(0.05)  # ~20fps processing
-                    
-                    cap.release()
-                    status_placeholder.info("📹 Live detection session completed")
-                    st.session_state.camera_active = False
-                    
             except Exception as e:
-                status_placeholder.error(f"❌ Error: {str(e)}")
-                st.session_state.camera_active = False
+                st.error(f"❌ Processing error: {str(e)}")
+                st.info("Please try again with a different photo")
         
         # Enhanced photo upload for testing
         st.markdown("---")
